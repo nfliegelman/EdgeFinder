@@ -23,8 +23,8 @@
       "price": 128,
       "units": 1.0,
       "date": "2026-06-30",
-      "result": null,
-      "units_pl": null
+      "result": "win",
+      "units_pl": 1.28
     },
     {
       "away": "New York Mets",
@@ -36,8 +36,8 @@
       "price": -102,
       "units": 1.0,
       "date": "2026-06-30",
-      "result": null,
-      "units_pl": null
+      "result": "win",
+      "units_pl": 0.98
     },
     {
       "away": "San Diego Padres",
