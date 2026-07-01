@@ -31,15 +31,24 @@ UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
 # Sports to scan: (tab_key, odds_api_key, sport_kind, action_network_league_or_None)
 SPORTS = [
     ('mlb', 'baseball_mlb',            'baseball', 'mlb'),
-    ('wc',  'soccer_fifa_world_cup',   'soccer',   None),
-    ('mma', 'mma_mixed_martial_arts',  'mma',      None),
-    # When these come into season, uncomment to activate:
+    # Focused on MLB for now (it's what you're betting + keeps API usage low).
+    # When you add a sport, uncomment and drop your daily run count to stay under the
+    # free API budget. Each sport adds ~3 credits per run.
+    # ('wc',  'soccer_fifa_world_cup',   'soccer',   None),
+    # ('mma', 'mma_mixed_martial_arts',  'mma',      None),
     # ('nfl', 'americanfootball_nfl',   'americanfootball', 'nfl'),
-    # ('cfb', 'americanfootball_ncaaf', 'americanfootball', 'ncaaf'),
     # ('nba', 'basketball_nba',         'basketball', 'nba'),
     # ('nhl', 'icehockey_nhl',          'icehockey',  'nhl'),
-    # ('cbb', 'basketball_ncaab',       'basketball', 'ncaab'),
 ]
+
+# Per-sport sharp-grade thresholds (gap = money% minus tickets% on the sharp side).
+# Anchored to the real MLB gap distribution: median ~9, 75th pctile ~15, 90th ~22.
+# So a +15 gap is a B (good, ordinary), NOT an A. A/S are reserved for the true tail.
+GRADE_THRESHOLDS = {
+    'baseball': {'S':25, 'A':20, 'B':13, 'C':9, 'D':6},
+    # defaults for other sports until we calibrate them with their own data:
+    '_default': {'S':25, 'A':20, 'B':13, 'C':9, 'D':6},
+}
 
 # Sanity gate
 MIN_EV, LONGSHOT_CAP, EV_CEILING, MIN_BOOKS = 0.03, 500, 0.25, 3
@@ -149,7 +158,7 @@ SPREAD_LABEL={'baseball':'Run Line','soccer':'Asian Handicap','americanfootball'
 
 # ============================ DATA FETCH ============================
 def fetch_odds(sport_key):
-    url=f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={ODDS_KEY}&regions=us,us2&markets=h2h,spreads,totals&oddsFormat=american"
+    url=f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={ODDS_KEY}&regions=us&markets=h2h,spreads,totals&oddsFormat=american"
     try: return gj(url)
     except Exception as e: print(f"    ! odds fetch failed for {sport_key}: {e}"); return []
 
@@ -498,13 +507,7 @@ TEMPLATE_HEAD = r"""<!DOCTYPE html>
   <div class="tabs" id="tabs"></div>
   <div id="views"></div>
 </div>
-<div class="dock" id="dock"><div class="dock-w">
-  <div class="dock-h" onclick="toggleDock()"><div class="t">PARLAY<span class="cnt" id="legcount">0</span></div><div class="pay" id="dockodds">—</div></div>
-  <div class="dock-body"><div id="legs"></div>
-    <div class="calc"><input id="stake" type="number" value="25" min="1" inputmode="decimal" oninput="recalc()"><div class="out"><div class="l">to win</div><div class="v" id="payout">$0.00</div><div class="o" id="comboodds">—</div></div><button class="clr" onclick="clearParlay()">clear</button></div>
-  </div>
-</div></div>
-<footer>say <b>"run it"</b> for a fresh pull · true-prob blend + sharp money, computed live<br>entertainment / analysis only</footer>
+<footer><a href="stats.html" style="color:#34d399;font-weight:700;text-decoration:none">📊 view stats & results →</a><br>true-prob blend + sharp money, computed live · entertainment / analysis only</footer>
 """
 
 TEMPLATE_APP = r"""
@@ -565,9 +568,7 @@ function gameCard(c){
   else if(sg)note=`<div class="note">Weak/noise-level signal (D). Not a real edge. <b>Pass.</b></div>`;
   else note=`<div class="note">No value, no sharp signal. <b>Pass.</b></div>`;
   const addable=c.has_value&&v;
-  const sel=addable?`${v.mkt==='SPR'?(c.spread_label):v.mkt} ${v.side}${v.point!=null?' '+((+v.point>0?'+':'')+v.point):''}`:'';
-  const leg=addable?JSON.stringify({id:c.away+'_'+c.home+'_'+v.mkt,sel:sel,price:v.price,match:c.away+' vs '+c.home}):'';
-  return `<div class="card ${sg&&(sg.grade==='S')?'conf':''} ${addable?'add':''}" ${addable?`data-leg='${leg}' onclick="addLeg(this)"`:''}>
+  return `<div class="card ${sg&&(sg.grade==='S')?'conf':''}">
     <div class="badgebar">${chip}${sharpbadge}${valbadge}${statusPill(c.status)}</div>
     <div class="body"><div class="teams"><div class="team"><div class="nm">${c.away}</div><div class="meta">${tStr(c.time)}</div></div><div class="at">${c.three_way?'v':'@'}</div><div class="team r"><div class="nm">${c.home}</div></div></div>
     <div class="markets">${blocks}</div>${sharpHtml}${note}</div></div>`;
@@ -585,7 +586,7 @@ function tpStatus(st){
 function amDec(o){o=+o;return o>0?1+o/100:1+100/(-o);}
 function decAm(d){return d>=2?'+'+Math.round((d-1)*100):''+Math.round(-100/(d-1));}
 const GORDER={S:5,A:4,B:3,C:2,D:1};
-const SPORTS=[{key:'mlb',label:'MLB',live:true},{key:'wc',label:'WORLD CUP',live:true,temp:true},{key:'mma',label:'UFC',live:true},{key:'golf',label:'GOLF',live:false,ret:'Jul'},{key:'nfl',label:'NFL',live:false,ret:'Sep'},{key:'cfb',label:'CFB',live:false,ret:'Aug'},{key:'nba',label:'NBA',live:false,ret:'Oct'},{key:'nhl',label:'NHL',live:false,ret:'Oct'},{key:'cbb',label:'CBB',live:false,ret:'Nov'}];
+const SPORTS=[{key:'mlb',label:'MLB',live:true},{key:'nfl',label:'NFL',live:false,ret:'Sep'},{key:'nba',label:'NBA',live:false,ret:'Oct'},{key:'nhl',label:'NHL',live:false,ret:'Oct'}];
 const now=new Date();
 document.getElementById('clock').innerHTML=now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+'<br><span class="lv">● live feed</span>';
 const anySharp=Object.values(ALL).flat().some(c=>c.sharp_grade);
@@ -665,18 +666,8 @@ function buildSportView(key,label,active){
   v.innerHTML=h;viewsEl.appendChild(v);
 }
 buildSportView('mlb','MLB',true);
-buildSportView('wc','World Cup',false);
-buildSportView('mma','UFC',false);
-SPORTS.filter(s=>!s.live).forEach(s=>{const v=mkView(s.key,false);v.innerHTML=`<div class="empty"><div class="ic">◍</div><h3>${s.label} is out of season</h3><p>Lights up around <b>${s.ret}</b>. Sharp grades for US sports + value scan on all markets.</p></div>`;viewsEl.appendChild(v);});
-// parlay
-let parlay=[];
-function addLeg(el){const leg=JSON.parse(el.dataset.leg);const i=parlay.findIndex(x=>x.id===leg.id);if(i>=0){parlay.splice(i,1);el.classList.remove('in');}else{parlay.push(leg);el.classList.add('in');}renderParlay();}
-function removeLeg(id){parlay=parlay.filter(x=>x.id!==id);document.querySelectorAll('.card.in').forEach(c=>{if(c.dataset.leg&&JSON.parse(c.dataset.leg).id===id)c.classList.remove('in');});renderParlay();}
-function clearParlay(){parlay=[];document.querySelectorAll('.card.in').forEach(c=>c.classList.remove('in'));renderParlay();}
-function renderParlay(){document.getElementById('legcount').textContent=parlay.length;if(parlay.length)document.getElementById('dock').classList.add('open');const legs=document.getElementById('legs');legs.innerHTML=parlay.length?parlay.map(p=>`<div class="leg"><div class="ln2">${p.sel}<span class="s">${p.match}</span></div><div style="display:flex;align-items:center;gap:8px"><span class="lo">${amStr(p.price)}</span><span class="x" onclick="event.stopPropagation();removeLeg('${(''+p.id).replace(/'/g,'')}')">×</span></div></div>`).join(''):'<div class="dock-empty">tap a card with ✓ VALUE to add a leg</div>';recalc();}
-function recalc(){const stake=parseFloat(document.getElementById('stake').value)||0;let dec=1;parlay.forEach(p=>dec*=amDec(p.price));document.getElementById('dockodds').textContent=parlay.length?decAm(dec):'—';document.getElementById('comboodds').textContent=parlay.length?decAm(dec)+' · '+dec.toFixed(2)+'x':'—';document.getElementById('payout').textContent='$'+(parlay.length?(stake*dec-stake).toFixed(2):'0.00');}
-function toggleDock(){document.getElementById('dock').classList.toggle('open');}
-renderParlay();
+SPORTS.filter(s=>!s.live).forEach(s=>{const v=mkView(s.key,false);v.innerHTML=`<div class="empty"><div class="ic">◍</div><h3>${s.label} is out of season</h3><p>Lights up around <b>${s.ret}</b>. Full sharp grades + value scan when it's live.</p></div>`;viewsEl.appendChild(v);});
+
 
 
 
@@ -684,24 +675,26 @@ renderParlay();
 
 
 # ============================ SHARP GRADING ============================
-def grade_sharp(splits, soft_fair_game, num_bets=None, is_early_week=False):
+def grade_sharp(splits, soft_fair_game, num_bets=None, is_early_week=False, sport_kind='baseball'):
     teams=list(splits.keys())
     if len(teams)!=2: return None
+    th=GRADE_THRESHOLDS.get(sport_kind, GRADE_THRESHOLDS['_default'])
     gaps={k:(splits[k]['money'] or 0)-(splits[k]['tickets'] or 0) for k in teams}
     sharp_side=max(teams,key=lambda k:gaps[k]); gap=gaps[sharp_side]
     tickets=splits[sharp_side]['tickets'] or 0; money=splits[sharp_side]['money'] or 0
-    if gap<5: return None
+    if gap<th['D']: return None
     contrarian=tickets<=35
     steam=False
     sf=soft_fair_game.get(sharp_side) if soft_fair_game else None
     odds=splits[sharp_side].get('odds')
     if sf is not None and odds is not None and am2prob(odds)>sf+0.015: steam=True
-    if gap>=20 and contrarian and steam: grade='S'
-    elif (gap>=15 and contrarian) or (gap>=20): grade='A'
-    elif gap>=10: grade='B'
-    elif gap>=7: grade='C'
+    # percentile-anchored, sport-specific: S/A require the tail AND contrarian confirmation
+    if gap>=th['S'] and contrarian and steam: grade='S'
+    elif (gap>=th['A'] and contrarian) or (gap>=th['S']): grade='A'
+    elif gap>=th['B']: grade='B'
+    elif gap>=th['C']: grade='C'
     else: grade='D'
-    if not contrarian and tickets>=55: grade='D'
+    if not contrarian and tickets>=55: grade='D'   # money following the public = not sharp
     thin=(num_bets is not None and num_bets<1500); capped=False
     if (thin or is_early_week) and grade in ('S','A'): grade='B'; capped=True
     return {'side':sharp_side,'grade':grade,'gap':round(gap,1),'tickets':round(tickets),'money':round(money),
@@ -853,6 +846,229 @@ def collect_results(sharp_raw_by_league):
                 out[(nm(g['away_team_id']),nm(g['home_team_id']))]={'away_runs':ar,'home_runs':hr}
     return out
 
+# ---- snapshot log: every run, every graded game, for edge-over-time analysis ----
+def hours_until(iso):
+    try:
+        start=datetime.fromisoformat(iso.replace('Z','+00:00'))
+        return round((start-datetime.now(timezone.utc)).total_seconds()/3600.0, 2)
+    except: return None
+
+def log_snapshots(path, allc):
+    """Append one row per MLB game that has a sharp grade this run."""
+    snaps=[]
+    if os.path.exists(path):
+        try: snaps=json.load(open(path)).get('snaps',[])
+        except: snaps=[]
+    run_ts=datetime.now(timezone.utc).isoformat()
+    for sport,cards in allc.items():
+        if sport.startswith('_'): continue
+        for c in cards:
+            sg=c.get('sharp_grade')
+            if not sg: continue
+            snaps.append({
+                'run_ts':run_ts,'sport':sport,'game':f"{c['away']} @ {c['home']}",
+                'away':c['away'],'home':c['home'],'commence':c['time'],
+                'hours_to_game':hours_until(c['time']),
+                'sharp_side':sg['side'],'grade':sg['grade'],'gap':sg['gap'],
+                'tickets':sg['tickets'],'money':sg['money'],
+                'contrarian':sg['contrarian'],'steam':sg['steam'],
+                'has_value':c.get('has_value'),
+                'rec_price':(c.get('rec') or {}).get('price'),
+                'rec_market':(c.get('rec') or {}).get('market'),
+                'units':c.get('units'),
+            })
+    json.dump({'snaps':snaps}, open(path,'w'), default=str)
+    return len(snaps)
+
+def write_csv(path, rows, cols):
+    import csv
+    with open(path,'w',newline='',encoding='utf-8') as f:
+        w=csv.DictWriter(f, fieldnames=cols, extrasaction='ignore')
+        w.writeheader()
+        for r in rows: w.writerow(r)
+
+def compute_stats(log_path, snap_path, unit_dollars):
+    """Aggregate settled bets into success/profitability by grade, unit size, market,
+    value-vs-sharp, price bucket, and hours-to-game. Also pull edge-over-time from snapshots."""
+    log=load_log(log_path)
+    settled=[p for p in log['plays'] if p.get('result') in ('win','loss')]
+    def agg(rows):
+        n=len(rows); w=sum(1 for r in rows if r['result']=='win')
+        risked=sum(float(r.get('units',1)) for r in rows)
+        pl=round(sum(r.get('units_pl',0) or 0 for r in rows),2)
+        roi=round(100*pl/risked,1) if risked>0 else None
+        return {'n':n,'wins':w,'losses':n-w,'win_pct':round(100*w/n,1) if n else None,
+                'units_pl':pl,'roi':roi,'dollars':round(pl*unit_dollars)}
+    def by(keyfn, order=None):
+        buckets={}
+        for r in settled:
+            k=keyfn(r)
+            if k is None: continue
+            buckets.setdefault(k,[]).append(r)
+        out={k:agg(v) for k,v in buckets.items()}
+        if order: out={k:out[k] for k in order if k in out}
+        return out
+    def price_bucket(r):
+        try: p=float(r['price'])
+        except: return None
+        if p<=-150: return 'chalk (≤-150)'
+        if p<100: return 'short (-150..-100)'
+        if p<=150: return 'pick (+100..+150)'
+        if p<=250: return 'dog (+150..+250)'
+        return 'longdog (+250+)'
+    def htg_bucket(r):
+        h=r.get('hours_to_game')
+        if h is None: return None
+        if h<1: return '<1h'
+        if h<3: return '1-3h'
+        if h<6: return '3-6h'
+        return '6h+'
+    overall=agg(settled)
+    overall['pending']=len([p for p in log['plays'] if p.get('result') is None])
+    # cumulative units over time (by date)
+    from collections import OrderedDict
+    cum=OrderedDict(); running=0.0
+    for r in sorted(settled, key=lambda x:x.get('date','')):
+        running+=(r.get('units_pl',0) or 0); cum[r.get('date','?')]=round(running,2)
+    # edge-over-time from snapshots: avg gap by hours-to-game bucket
+    edge_time={}
+    if os.path.exists(snap_path):
+        try: snaps=json.load(open(snap_path)).get('snaps',[])
+        except: snaps=[]
+        b={}
+        for s in snaps:
+            h=s.get('hours_to_game')
+            if h is None: continue
+            k='<1h' if h<1 else '1-3h' if h<3 else '3-6h' if h<6 else '6h+'
+            b.setdefault(k,[]).append(s.get('gap',0))
+        edge_time={k:round(sum(v)/len(v),1) for k,v in b.items() if v}
+    return {'overall':overall,
+            'by_grade':by(lambda r:r.get('grade'), order=['S','A','B','C','D']),
+            'by_units':by(lambda r:f"{r.get('units')}u"),
+            'by_market':by(lambda r:r.get('market')),
+            'by_signal':by(lambda r:'value+sharp' if r.get('has_value') and r.get('grade') in ('S','A','B') else ('value' if r.get('has_value') else 'sharp-only')),
+            'by_price':by(price_bucket),
+            'by_htg':by(htg_bucket),
+            'cumulative':list(cum.items()),
+            'edge_by_htg':edge_time,
+            'unit_dollars':unit_dollars}
+
+# ============================ STATS PAGE ============================
+def build_stats_page(stats, unit_dollars):
+    import json as _j
+    data=_j.dumps(stats, default=str)
+    return r'''<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EdgeFinder · Stats</title>
+<style>
+:root{--bg:#0a0d12;--card:#131820;--card2:#1a212b;--line:#232b36;--txt:#e8edf3;--mut:#8b97a6;--dim:#5c6673;
+--sharp:#34d399;--public:#f87171;--gold:#f5c451;--blue:#60a5fa;--mono:'SF Mono',ui-monospace,Menlo,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:18px;max-width:760px;margin:0 auto;padding-bottom:60px}
+a{color:var(--blue);text-decoration:none}
+.top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+h1{font-size:26px;font-weight:800}h1 span{color:var(--sharp)}
+.sub{color:var(--mut);font-size:13px;margin-bottom:18px}
+.big{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;flex:1;min-width:120px}
+.stat .l{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim);font-weight:700}
+.stat .v{font-size:24px;font-weight:800;font-family:var(--mono);margin-top:3px}
+.pos{color:var(--sharp)}.neg{color:var(--public)}
+.sect{font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--mut);margin:22px 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:right;padding:7px 9px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);font-weight:700}
+td.g{font-family:var(--mono);font-weight:800}
+.gS{color:var(--gold)}.gA{color:var(--sharp)}.gB{color:var(--blue)}.gC{color:var(--mut)}.gD{color:var(--dim)}
+.bar{height:22px;border-radius:5px;display:flex;align-items:center;padding:0 8px;font-size:11px;font-family:var(--mono);font-weight:700;color:#0a0d12;min-width:30px}
+.thin{color:var(--dim);font-size:11px;font-style:italic}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.dl{display:flex;gap:10px;margin:14px 0;flex-wrap:wrap}
+.dl a{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600}
+.note{color:var(--mut);font-size:12px;line-height:1.5;margin-top:6px}
+.empty{text-align:center;color:var(--mut);padding:40px 20px}
+svg{display:block;width:100%;overflow:visible}
+</style></head><body>
+<div class="top"><h1>edge<span>finder</span> stats</h1><a href="index.html">← board</a></div>
+<div class="sub" id="sub"></div>
+<div id="app"></div>
+<script>const S=''' + data + r''';</script>
+<script>
+const ud=S.unit_dollars||10;
+const app=document.getElementById('app');
+const o=S.overall||{n:0};
+document.getElementById('sub').textContent = o.n>0 ? `${o.n} settled bets · ${o.pending||0} pending · $${ud}/unit` : 'No settled bets yet';
+function money(u){const d=Math.round(u*ud);return (u>=0?'+':'')+u+'u ('+(d>=0?'+$':'-$')+Math.abs(d)+')';}
+function cls(u){return u>=0?'pos':'neg';}
+if(!o.n){app.innerHTML=`<div class="empty"><h3>No settled bets yet</h3><p>Your stats build automatically as recommended games finish. Check back after a few slates.</p></div>`;}
+else{
+  // big numbers
+  app.innerHTML=`<div class="big">
+    <div class="stat"><div class="l">Record</div><div class="v">${o.wins}-${o.losses}</div></div>
+    <div class="stat"><div class="l">Win %</div><div class="v">${o.win_pct}%</div></div>
+    <div class="stat"><div class="l">Units</div><div class="v ${cls(o.units_pl)}">${o.units_pl>=0?'+':''}${o.units_pl}</div></div>
+    <div class="stat"><div class="l">ROI</div><div class="v ${cls(o.roi||0)}">${o.roi==null?'—':o.roi+'%'}</div></div>
+    <div class="stat"><div class="l">Profit</div><div class="v ${cls(o.units_pl)}">${o.dollars>=0?'+$':'-$'}${Math.abs(o.dollars)}</div></div>
+  </div>`;
+  // by grade — the headline breakdown
+  app.innerHTML+=`<div class="sect">By sharp grade</div>`+gradeTable(S.by_grade,['S','A','B','C','D']);
+  // cumulative chart
+  if(S.cumulative && S.cumulative.length>1) app.innerHTML+=`<div class="sect">Cumulative units</div><div class="card">${lineChart(S.cumulative)}</div>`;
+  // units won by grade bar chart
+  app.innerHTML+=`<div class="sect">Units won by grade</div><div class="card">${barChart(S.by_grade,['S','A','B','C','D'])}</div>`;
+  // other breakdowns
+  app.innerHTML+=`<div class="sect">By unit size</div>`+simpleTable(S.by_units);
+  app.innerHTML+=`<div class="sect">By signal type</div>`+simpleTable(S.by_signal);
+  app.innerHTML+=`<div class="sect">By price range</div>`+simpleTable(S.by_price);
+  app.innerHTML+=`<div class="sect">By market</div>`+simpleTable(S.by_market);
+  app.innerHTML+=`<div class="sect">By time until game (when bet placed)</div>`+simpleTable(S.by_htg);
+  // edge over time
+  if(S.edge_by_htg && Object.keys(S.edge_by_htg).length){
+    let rows=Object.entries(S.edge_by_htg).map(([k,v])=>`<tr><td>${k}</td><td class="g">${v} pts</td></tr>`).join('');
+    app.innerHTML+=`<div class="sect">Avg sharp gap by time-to-game (all snapshots)</div><div class="card"><table><tr><th>Hours out</th><th>Avg gap</th></tr>${rows}</table><div class="note">If gaps are bigger closer to game time, sharp money is arriving late — bet later. If bigger early, bet early. Needs a couple weeks of snapshots to trust.</div></div>`;
+  }
+}
+// downloads
+app.innerHTML+=`<div class="sect">Raw data</div><div class="dl"><a href="bets.csv" download>⬇ bets.csv</a><a href="snapshots.csv" download>⬇ snapshots.csv</a></div><div class="note">Every bet and every snapshot, for your own sorting. bets.csv = graded results. snapshots.csv = each run's readings for edge-over-time.</div>`;
+
+function badge(g){return `<td class="g g${g}">${g}</td>`;}
+function gradeTable(d,order){
+  if(!d)return '';
+  let rows='';
+  order.forEach(g=>{const r=d[g];if(!r)return;
+    const thin=r.n<8?'<span class="thin"> small</span>':'';
+    rows+=`<tr>${badge(g)}<td>${r.n}${thin}</td><td>${r.win_pct==null?'—':r.win_pct+'%'}</td><td class="${cls(r.units_pl)}">${r.units_pl>=0?'+':''}${r.units_pl}u</td><td class="${cls(r.roi||0)}">${r.roi==null?'—':r.roi+'%'}</td><td class="${cls(r.dollars)}">${r.dollars>=0?'+$':'-$'}${Math.abs(r.dollars)}</td></tr>`;});
+  if(!rows)return '<div class="thin card">Not enough graded bets yet.</div>';
+  return `<table><tr><th>Grade</th><th>Bets</th><th>Win%</th><th>Units</th><th>ROI</th><th>$</th></tr>${rows}</table><div class="note">Small = under 8 bets, don't read too much into it yet. You want S ≥ A ≥ B in ROI; if they're scrambled, the grading needs tuning.</div>`;
+}
+function simpleTable(d){
+  if(!d||!Object.keys(d).length)return '<div class="thin card">No data yet.</div>';
+  let rows=Object.entries(d).map(([k,r])=>{const thin=r.n<8?'<span class="thin"> small</span>':'';
+    return `<tr><td>${k}</td><td>${r.n}${thin}</td><td>${r.win_pct==null?'—':r.win_pct+'%'}</td><td class="${cls(r.units_pl)}">${r.units_pl>=0?'+':''}${r.units_pl}u</td><td class="${cls(r.roi||0)}">${r.roi==null?'—':r.roi+'%'}</td></tr>`;}).join('');
+  return `<table><tr><th></th><th>Bets</th><th>Win%</th><th>Units</th><th>ROI</th></tr>${rows}</table>`;
+}
+function barChart(d,order){
+  const GC={S:'#f5c451',A:'#34d399',B:'#60a5fa',C:'#8b97a6',D:'#5c6673'};
+  const vals=order.map(g=>d&&d[g]?d[g].units_pl:0);
+  const max=Math.max(1,...vals.map(Math.abs));
+  let bars='';
+  order.forEach((g,i)=>{const v=vals[i];const w=Math.abs(v)/max*100;
+    bars+=`<div style="display:flex;align-items:center;gap:8px;margin:6px 0"><span style="width:18px;font-family:var(--mono);font-weight:800;color:${GC[g]}">${g}</span><div style="flex:1;background:#0a0d12;border-radius:5px;overflow:hidden"><div class="bar" style="width:${Math.max(w,8)}%;background:${v>=0?GC[g]:'#f87171'}">${v>=0?'+':''}${v}u</div></div></div>`;});
+  return bars;
+}
+function lineChart(pairs){
+  const W=680,H=160,pad=24;
+  const vals=pairs.map(p=>p[1]);const min=Math.min(0,...vals),max=Math.max(0,...vals);
+  const rng=(max-min)||1;
+  const pts=pairs.map((p,i)=>{const x=pad+i/(pairs.length-1||1)*(W-2*pad);const y=H-pad-((p[1]-min)/rng)*(H-2*pad);return [x,y];});
+  const path=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const zeroY=H-pad-((0-min)/rng)*(H-2*pad);
+  const last=vals[vals.length-1];
+  return `<svg viewBox="0 0 ${W} ${H}"><line x1="${pad}" y1="${zeroY}" x2="${W-pad}" y2="${zeroY}" stroke="#232b36" stroke-dasharray="3 3"/><path d="${path}" fill="none" stroke="${last>=0?'#34d399':'#f87171'}" stroke-width="2.5"/><circle cx="${pts[pts.length-1][0]}" cy="${pts[pts.length-1][1]}" r="4" fill="${last>=0?'#34d399':'#f87171'}"/><text x="${pad}" y="14" fill="#5c6673" font-size="11" font-family="monospace">${max>=0?'+':''}${max}u</text><text x="${pad}" y="${H-4}" fill="#5c6673" font-size="11" font-family="monospace">${min}u</text></svg>`;
+}
+</script></body></html>'''
+
 # ============================ MAIN ============================
 def main():
     here=os.path.dirname(os.path.abspath(__file__))
@@ -875,7 +1091,7 @@ def main():
             # grade
             sm=sharp_map.get((c['away'],c['home']))
             sg=None
-            if sm: sg=grade_sharp(sm['splits'], c['_soft_fair'], num_bets=sm.get('num_bets'))
+            if sm: sg=grade_sharp(sm['splits'], c['_soft_fair'], num_bets=sm.get('num_bets'), sport_kind=kind)
             c['sharp_grade']=sg
             c['rec']=build_recommendation(c, sg)
             u, ureason = suggest_units(c)
@@ -903,22 +1119,43 @@ def main():
 
     # ---- results tracker ----
     log_path=os.path.join(here, "edgefinder_betlog.json")
+    snap_path=os.path.join(here, "edgefinder_snapshots.json")
     # 1. grade any pending bets we now have final scores for
     results=collect_results(raw_payloads)
     graded=grade_pending(log_path, results)
-    # 2. log today's recommended plays (the ones with a unit size) that haven't started yet
+    # 2. log today's recommended plays with full feature set (grade, gap, hours-to-game)
     todays=[]
     for t in top:
         if t.get('units') and t.get('rec') and (t.get('status') or {}).get('state') in (None,'scheduled'):
-            r=t['rec']
+            r=t['rec']; sg=t.get('sg') or {}
             todays.append({'away':t['away'],'home':t['home'],'sport':t['sport'],
                            'market':r['market'],'side':str(r['side']),'point':r.get('point'),
-                           'price':r['price'],'units':t['units']})
+                           'price':r['price'],'units':t['units'],
+                           'grade':t.get('grade'),'gap':sg.get('gap'),
+                           'contrarian':sg.get('contrarian'),'steam':sg.get('steam'),
+                           'has_value':t.get('has_value'),
+                           'hours_to_game':hours_until(t['time'])})
     added=log_plays(log_path, todays)
-    # 3. summary for the dashboard
+    # 3. snapshot every graded game this run (edge-over-time dataset)
+    n_snaps=log_snapshots(snap_path, allc)
+    # 4. summary + full stats for the dashboards
     summ=tracker_summary(log_path, UNIT_DOLLARS)
+    stats=compute_stats(log_path, snap_path, UNIT_DOLLARS)
     allc['_tracker']=summ
+    allc['_stats']=stats
     allc['_unit_dollars']=UNIT_DOLLARS
+
+    # 5. CSV exports (for manual sorting) — written to docs/ when on GitHub, else here
+    csv_dir = os.path.join(here,"docs") if CI else here
+    os.makedirs(csv_dir, exist_ok=True)
+    betlog=load_log(log_path)
+    write_csv(os.path.join(csv_dir,"bets.csv"), betlog['plays'],
+              ['date','sport','away','home','market','side','point','price','units',
+               'grade','gap','contrarian','steam','has_value','hours_to_game','result','units_pl'])
+    snaps_all=(json.load(open(snap_path)).get('snaps',[]) if os.path.exists(snap_path) else [])
+    write_csv(os.path.join(csv_dir,"snapshots.csv"), snaps_all,
+              ['run_ts','sport','game','commence','hours_to_game','sharp_side','grade','gap',
+               'tickets','money','contrarian','steam','has_value','rec_price','rec_market','units'])
 
     # render HTML
     html = TEMPLATE_HEAD + "\n<script>\nconst ALL=" + json.dumps(allc, default=str) + ";\n</script>\n<script>\n" + TEMPLATE_APP + "\n</script>\n</body>\n</html>"
@@ -927,11 +1164,15 @@ def main():
     with open(archive,'w',encoding='utf-8') as f: f.write(html)
     latest=os.path.join(here,"edgefinder_latest.html")
     with open(latest,'w',encoding='utf-8') as f: f.write(html)
-    # When running on GitHub, also publish to docs/index.html (served by GitHub Pages)
+    # stats page
+    stats_html = build_stats_page(stats, UNIT_DOLLARS)
+    with open(os.path.join(here,"edgefinder_stats.html"),'w',encoding='utf-8') as f: f.write(stats_html)
+    # When running on GitHub, also publish to docs/ (served by GitHub Pages)
     if CI:
         docs=os.path.join(here,"docs")
         os.makedirs(docs, exist_ok=True)
         with open(os.path.join(docs,"index.html"),'w',encoding='utf-8') as f: f.write(html)
+        with open(os.path.join(docs,"stats.html"),'w',encoding='utf-8') as f: f.write(stats_html)
 
     n_top=len(top)
     print(f"\nDone. {n_top} play(s) worth attention today.")
