@@ -1,0 +1,82 @@
+{
+  "plays": [
+    {
+      "away": "Los Angeles Angels",
+      "home": "Seattle Mariners",
+      "sport": "MLB",
+      "market": "Moneyline",
+      "side": "Los Angeles Angels",
+      "point": null,
+      "price": 157,
+      "units": 1.5,
+      "date": "2026-06-30",
+      "result": null,
+      "units_pl": null,
+      "close_price": 174
+    },
+    {
+      "away": "Chicago White Sox",
+      "home": "Baltimore Orioles",
+      "sport": "MLB",
+      "market": "Moneyline",
+      "side": "Chicago White Sox",
+      "point": null,
+      "price": 128,
+      "units": 1.0,
+      "date": "2026-06-30",
+      "result": "win",
+      "units_pl": 1.28
+    },
+    {
+      "away": "New York Mets",
+      "home": "Toronto Blue Jays",
+      "sport": "MLB",
+      "market": "Moneyline",
+      "side": "New York Mets",
+      "point": null,
+      "price": -102,
+      "units": 1.0,
+      "date": "2026-06-30",
+      "result": "win",
+      "units_pl": 0.98
+    },
+    {
+      "away": "San Diego Padres",
+      "home": "Chicago Cubs",
+      "sport": "MLB",
+      "market": "Moneyline",
+      "side": "San Diego Padres",
+      "point": null,
+      "price": 128,
+      "units": 1.0,
+      "date": "2026-06-30",
+      "result": "loss",
+      "units_pl": -1.0
+    },
+    {
+      "away": "Pittsburgh Pirates",
+      "home": "Philadelphia Phillies",
+      "sport": "MLB",
+      "market": "Moneyline",
+      "side": "Pittsburgh Pirates",
+      "point": null,
+      "price": 112,
+      "units": 1.0,
+      "grade": "A",
+      "gap": 24,
+      "contrarian": true,
+      "steam": true,
+      "has_value": false,
+      "ev": null,
+      "fair": null,
+      "anchor": null,
+      "model_version": "2026-07-02.v9-ridgeseeker",
+      "close_price": null,
+      "clv": null,
+      "hours_to_game": 0.56,
+      "date": "2026-07-02",
+      "result": null,
+      "units_pl": null
+    }
+  ]
+}
